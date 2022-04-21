@@ -19,7 +19,7 @@ s=2;n=2;
 Dinput=0.6;
 I1=0.1; I2=0.05; I3=1.2; I4=4.4; I5=2.8; I6=2; I7=1.2; 
 
-%X(1)-皮层，X(2)-D1，X(3)-D2，X(4)-GPi
+%X(1)-cortex，X(2)-D1，X(3)-D2，X(4)-GPi
 %X(5)-GPe，X(6)-TH，X(7)-STN，X(8)-PPN
 dX = zeros(1,8);
 
@@ -32,3 +32,153 @@ dX(6)=(I6-X(6)./R-(T64.*(X(4))^n)./((s)^n+(X(4))^n)+(T68.*(X(8))^n)./((s)^n+(X(8
 dX(7)=(I7-X(7)./R+(T71.*(X(1))^n)./((s)^n+(X(1))^n)-(T75.*(X(5))^n)./((s)^n+(X(5))^n)+(T78*(X(8))^n)./((s)^n+(X(8))^n))./C;
 dX(8)=(I8-X(8)./R+(T87.*(X(7))^n)./((s)^n+(X(7))^n)-(T84.*(X(4))^n)./((s)^n+(X(4))^n))./C;
 end
+
+
+function [pmax1,pmin2,fd,state,Sbeta]=T84_T48_fencha1(T84,T48)
+
+tmax=6000;
+dt=0.01;
+t=0:dt:tmax;
+N=length(t);
+
+X=zeros(N,8); 
+X(1,:)=[0.552783345944550	1.03909065350496	-1.11763868326521	1.26065870912090	0.660143141046978	-0.0678655535426873	-0.195221197898754	-0.217606350143192];
+
+for i=1:N-1  
+    K1 = Bi_2021_T84_T48(X(i,:),T84,T48);
+    K2 = Bi_2021_T84_T48(X(i,:)+dt*K1/2,T84,T48);
+    K3 = Bi_2021_T84_T48(X(i,:)+dt*K2/2,T84,T48);
+    K4 = Bi_2021_T84_T48(X(i,:)+dt*K3,T84,T48);
+    X(i+1,:) = X(i,:) + dt*(K1+2*K2+2*K3+K4)/6;
+end
+
+%The following codes are used for bifurcation analysis
+TD=5100;  % starting time used for analysis 
+ED=5600;
+xcut=X(TD/dt+1:ED/dt+1,1); %(截取后边一些数字，前面表示暂态)
+peaksmax=findpeaks(xcut);%(寻找局部最大值)
+peaksmax=sort(peaksmax); %对数组元素排序（升序）
+peaksmin=findpeaks(-xcut);
+peaksmin=sort(-peaksmin);
+
+if (length(peaksmax)>=1)
+    pmax1=peaksmax(end); %最大的局部最大值
+else
+    pmax1=xcut(1);
+end
+
+if (length(peaksmin)>=1)
+    pmin2=peaksmin(1);
+else
+    pmin2=xcut(2);
+end
+
+%% The following codes are used for frequency analysis
+
+fs=1/(dt/1000); 
+z=X(TD/dt+1:ED/dt+1,1)-mean(X(TD/dt+1:ED/dt+1,1));
+window1=hanning(length(z));
+nfft=length(z);
+[pxx1,ff1]=pwelch(z,window1,[],nfft,fs);
+
+index=pxx1==max(pxx1);
+if (abs(pmax1-pmin2)<0.03)
+    fd=0;    
+else
+    fd=ff1(index);
+end
+
+index1=find((ff1>=13)&(ff1<=30));
+Sbeta=trapz(ff1(index1(1):index1(end)),pxx1(index1(1):index1(end)));
+Sbeta=abs(Sbeta);
+
+% The following codes are used for state analysis
+ if ( abs(pmax1-pmin2)<=0.03 )                                             
+      state=2;  
+ elseif  fd>=7.9 && fd<13                                                 
+      state=3;  
+ elseif  fd>=13 && fd<=30                                                  
+      state=1;  
+ else
+     state=4;                                                                                                                       
+ end
+ 
+
+clear all
+clc
+
+len1=71;
+len2=41;
+
+T84=linspace(0,7,len1); 
+T48=linspace(0,2,len2); 
+
+State=zeros(len1,len2);
+FD=zeros(len1,len2);
+Pmax1=zeros(len1,len2);  
+Pmin2=zeros(len1,len2);
+Sbeta=zeros(len1,len2);
+
+for i=1:len1
+%    tic %tic-启动秒表计时器，函数会记录起始时刻,用来保存当前时间，toc函数会自动计算时间差,记录程序完成时间   
+   parfor j=1:len2
+        [p1,p2,p3,p4,p5]=T84_T48_fencha1(T84(i),T48(j));
+        Pmax1(i,j)=p1;
+        Pmin2(i,j)=p2;
+        FD(i,j)=p3;
+        State(i,j)=p4;
+        Sbeta(i,j)=p5;
+   end   
+%    toc   
+end
+
+figure
+imagesc(T84,T48,State');  %%C 的每个元素指定图像的一个像素的颜色。生成的图像是一个 m×n像素网格
+set(gca,'ydir','normal'),colorbar,colormap(jet); %%%gca 当前坐标区域图  jet 默认的一种颜色图
+axis on;
+set(gca,'FontName','Times New Roman','FontSize',16,'Fontweight','bold');
+xlabel('T_{84}','FontSize',20);
+ylabel('T_{48}','FontSize',20);
+title('State region','FontSize',20);
+% hold on
+% set(colorbar,'YTickLabel',{'1','2'}) %具体刻度赋值
+% xlim([0,7]);
+% ylim([0,2]);
+
+figure
+imagesc(T84,T48,FD');
+set(gca,'ydir','normal'),colorbar,colormap(jet);
+axis on;
+set(gca,'FontName','Times New Roman','FontSize',16,'Fontweight','bold');
+xlabel('T_{84}','FontSize',20);
+ylabel('T_{48}','FontSize',20);
+title('frequency(Hz)','FontSize',20);
+xlim([0,7]);
+% ylim([0,2]);
+
+
+%% 三维的beta振荡面积图
+[T84,T48]=meshgrid(linspace(0,7,len1),linspace(0,2,len2));
+% Z=griddata(T87,y,z,X,Y,'Sbeta');
+mesh(T84,T48,Sbeta');
+axis on;
+set(gca,'FontName','Times New Roman','FontSize',16,'Fontweight','bold');
+xlabel('T_{84}','FontSize',20);
+ylabel('T_{48}','FontSize',20);
+zlabel('cortex-beta area','FontSize',20);
+colorbar
+
+%%
+% figure;
+% imagesc(T84,T48,Sbeta');
+% set(gca,'ydir','normal'),colorbar,colormap(jet);
+% axis on;
+% set(gca,'FontName','Times New Roman','FontSize',16,'Fontweight','bold');
+% xlabel('T_{84}','FontSize',20);
+% ylabel('T_{48}','FontSize',20);
+% title('S_{beta}','FontSize',20);
+% xlim([0,7]);
+% ylim([0,2]);
+
+
+ 
